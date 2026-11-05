@@ -1,0 +1,11 @@
+n=3 p=2 (()()) -> VALIDA
+
+n=3 p=2 ((())) -> INVALIDA
+    - profundidad alcanzada 3 > 2, primer prefijo que la excede: (((
+
+n=3 p=2 ())(() -> INVALIDA
+    - cierra mas de lo abierto, primer prefijo problematico: ())
+
+n=3 p=2 ()(())() -> INVALIDA
+    - longitud 8, se esperaba 6
+
