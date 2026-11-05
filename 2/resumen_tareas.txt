@@ -1,0 +1,8 @@
+Resumen
+
+Total de planes: 2
+Tiempo total del proyecto: 10
+Penalizacion minima: 4
+
+Planes con penalizacion minima:
+A - B - C - D (penalizacion 4)

@@ -12,7 +12,7 @@ defmodule Plan do
   # Define como se convierte un Plan en texto: "#{plan}"
   defimpl String.Chars, for: Plan do
     def to_string(%Plan{orden: orden, penalizacion: penalizacion}) do
-      "#{Enum.join(orden, " -> ")} (penalizacion #{penalizacion})"
+      "#{Enum.join(orden, " - ")} (penalizacion #{penalizacion})"
     end
   end
 end

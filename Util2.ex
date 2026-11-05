@@ -360,8 +360,6 @@ defmodule Util2 do
     mostrar(codigo <> IO.ANSI.bright() <> titulo <> IO.ANSI.reset(), :mensaje)
   end
 
-
-
   @doc """
   Lee un archivo como Stream de lineas utiles.
 

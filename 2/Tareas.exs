@@ -1,107 +1,97 @@
-
-# PROBLEMA 2: Planificacion de tareas con dependencias
-# PASO 1: structs + lectura de tareas.csv
-# PASO 2: busqueda recursiva de ordenes y penalizacion
-
-
-# Las structs %Tarea{} y %Plan{} estan en Tarea.ex y Plan.ex
+Code.require_file("Tarea.ex")
+Code.require_file("Plan.ex")
+Code.require_file("../Util2.ex", __DIR__)
 
 defmodule Tareas do
 
-  # Devuelve {tareas, errores}
-  #   tareas  = lista de {%Tarea{}, numero_de_linea}
-  #   errores = lista de {numero_de_linea, motivo}
+  # LECTURA Y VALIDACION DE DATOS
 
   def leer_tareas(ruta) do
     if File.exists?(ruta) do
       {tareas, errores} =
         ruta
         |> Util2.lineas_utiles()
-        |> Stream.map(fn {linea, i} -> {parsear_linea(linea), i} end)
-        |> Enum.reduce({[], []}, fn {resultado, i}, {tareas, errores} ->
+        |> Stream.map(fn {linea, _} -> parsear_linea(linea) end)
+        |> Enum.reduce({[], []}, fn resultado, {tareas, errores} ->
           case resultado do
-            # [x | lista] pone x al inicio de la lista
-            {:ok, tarea} -> {[{tarea, i} | tareas], errores}
-            {:error, motivo} -> {tareas, [{i, motivo} | errores]}
+            {:ok, tarea} -> {[tarea | tareas], errores}
+            {:error, error} -> {tareas, [error | errores]}
           end
         end)
 
       {:ok, Enum.reverse(tareas), Enum.reverse(errores)}
     else
-      {:error, "no existe el archivo #{ruta}"}
+      {:error, "No existe el archivo #{ruta}"}
     end
   end
-
-
-  # Convierte el texto "B;2;5;A" en un %Tarea{}
-  # Cada paso devuelve {:ok, dato} o {:error, motivo}
 
   def parsear_linea(linea) do
-    with {:ok, [id, sd, sp, sdeps]} <- partir(linea),
-         {:ok, id} <- validar_id(id),
-         {:ok, duracion} <- entero(sd, "duracion"),
-         {:ok, plazo} <- entero(sp, "plazo") do
-      {:ok, Tarea.crear(id, duracion, plazo, parsear_deps(sdeps))}
-    else
-      # si cualquier paso fallo, devolvemos su error
-      {:error, motivo} -> {:error, motivo}
-    end
-  end
-
-  defp partir(linea) do
     case String.split(linea, ";") do
-      [_, _, _, _] = campos -> {:ok, campos}
-      campos -> {:error, "se esperaban 4 campos separados por ; y hay #{length(campos)}"}
+      [id, duracion, plazo, deps] ->
+        with {:ok, id} <- validar_id(String.trim(id)),
+             {:ok, duracion} <- entero(duracion),
+             :ok <- validar_duracion(duracion),
+             {:ok, plazo} <- entero(plazo),
+             :ok <- validar_plazo(plazo),
+             {:ok, deps} <- parsear_deps(deps) do
+          {:ok, Tarea.crear(id, duracion, plazo, deps)}
+        end
+
+      _ ->
+        {:error, "La linea debe tener cuatro campos separados por ;"}
     end
   end
 
-  defp validar_id(texto) do
-    id = String.trim(texto)
+  defp validar_id(""), do: {:error, "El ID esta vacio"}
 
-    cond do
-      id == "" -> {:error, "el id esta vacio"}
-      String.contains?(id, "|") -> {:error, "el id no puede contener |"}
-      true -> {:ok, id}
+  defp validar_id(id) do
+    if String.contains?(id, "|") do
+      {:error, "El ID no puede contener |"}
+    else
+      {:ok, id}
     end
   end
 
-  defp entero(texto, nombre) do
+  defp entero(texto) do
     case Integer.parse(String.trim(texto)) do
       {n, ""} -> {:ok, n}
-      _ -> {:error, "#{nombre} no es un entero: #{inspect(texto)}"}
+      _ -> {:error, "Hay un valor que no es entero"}
     end
   end
 
-  # "-" significa sin dependencias; "B|C" -> ["B", "C"]
+  defp validar_duracion(n) do
+    if n > 0, do: :ok, else: {:error, "La duracion debe ser mayor que cero"}
+  end
+
+  defp validar_plazo(n) do
+    if n >= 0, do: :ok, else: {:error, "El plazo no puede ser negativo"}
+  end
+
   defp parsear_deps(texto) do
-    t = String.trim(texto)
+    deps =
+      if String.trim(texto) == "-" do
+        []
+      else
+        texto |> String.split("|") |> Enum.map(&String.trim/1)
+      end
 
-    if t == "-" do
-      []
-    else
-      t |> String.split("|") |> Enum.map(fn dep -> String.trim(dep) end)
+    cond do
+      "" in deps -> {:error, "Hay una dependencia vacia"}
+      length(deps) != length(Enum.uniq(deps)) ->
+        {:error, "Hay dependencias repetidas"}
+      true -> {:ok, deps}
     end
   end
 
-  # ==========================================================
-  # PASO 2: BUSQUEDA RECURSIVA DE PLANES
-  # Es el mismo estilo del generador de parentesis: un Stream
-  # perezoso que prueba cada opcion y retrocede.
-  # ==========================================================
+  # BUSQUEDA DE PLANES
 
-  # Devuelve un Stream de %Plan{}, uno por cada orden valido
-  def planes(tareas) do
-    buscar(tareas, [], [], [], 0, 0)
+  def planes(tareas), do: buscar(tareas, [], [], [], 0, 0)
+
+  defp buscar([], _terminadas, orden, fines, _tiempo, penalizacion) do
+    [Plan.crear(Enum.reverse(orden), Enum.reverse(fines), penalizacion)]
   end
 
-  # Caso base: no quedan tareas pendientes -> plan completo.
-  # orden y fins se fueron armando al reves, por eso el reverse.
-  defp buscar([], _terminadas, orden, fins, _tiempo, penalizacion) do
-    [Plan.crear(Enum.reverse(orden), Enum.reverse(fins), penalizacion)]
-  end
-
-  # Caso recursivo: probar cada tarea habilitada, en orden alfabetico
-  defp buscar(pendientes, terminadas, orden, fins, tiempo, penalizacion) do
+  defp buscar(pendientes, terminadas, orden, fines, tiempo, penalizacion) do
     Stream.flat_map(habilitadas(pendientes, terminadas), fn tarea ->
       fin = tiempo + tarea.duracion
       atraso = max(0, fin - tarea.plazo)
@@ -110,67 +100,277 @@ defmodule Tareas do
         List.delete(pendientes, tarea),
         [tarea.id | terminadas],
         [tarea.id | orden],
-        [{tarea.id, fin} | fins],
+        [{tarea.id, fin} | fines],
         fin,
         penalizacion + atraso
       )
     end)
   end
 
-  # Tareas pendientes con todas sus dependencias terminadas,
-  # ordenadas alfabeticamente por id
   defp habilitadas(pendientes, terminadas) do
     pendientes
-    |> Util2.aplicar_filtro(fn tarea -> cumplidas?(tarea.dependencias, terminadas) end)
+    |> Util2.aplicar_filtro(fn t -> cumplidas?(t.dependencias, terminadas) end)
     |> Util2.ordenar(:asc, & &1.id)
   end
 
-  # Recursion: ¿todas las dependencias estan en la lista de terminadas?
-  defp cumplidas?([], _terminadas), do: true
+  defp cumplidas?([], _), do: true
 
   defp cumplidas?([dep | resto], terminadas) do
-    if dep in terminadas do
-      cumplidas?(resto, terminadas)
+    if dep in terminadas, do: cumplidas?(resto, terminadas), else: false
+  end
+
+  # VALIDACIONES GENERALES
+
+  defp validar_tareas(tareas) do
+    ids = Enum.map(tareas, & &1.id)
+
+    validar_ids(ids) ++
+      validar_referencias(tareas, ids) ++
+      validar_ciclos(tareas)
+  end
+
+  defp validar_ids(ids) do
+    repetidos = ids -- Enum.uniq(ids)
+
+    if repetidos == [] do
+      []
     else
-      false
+      ["Hay IDs repetidos: #{Enum.join(Enum.uniq(repetidos), ", ")}"]
     end
   end
 
+  defp validar_referencias(tareas, ids) do
+    Enum.flat_map(tareas, fn tarea ->
+      Enum.flat_map(tarea.dependencias, fn dep ->
+        cond do
+          dep == tarea.id -> ["La tarea #{tarea.id} depende de si misma"]
+          dep not in ids -> ["La dependencia #{dep} de #{tarea.id} no existe"]
+          true -> []
+        end
+      end)
+    end)
+  end
 
-  # MAIN
+  # DETECCION DE CICLOS
+
+  defp validar_ciclos(tareas) do
+    tareas
+    |> buscar_ciclos_tareas(tareas, [])
+    |> Enum.map(&normalizar_ciclo/1)
+    |> Enum.uniq()
+    |> Enum.map(fn ciclo ->
+      "Hay un ciclo: #{Enum.join(ciclo ++ [hd(ciclo)], " -> ")}"
+    end)
+  end
+
+  defp buscar_ciclos_tareas([], _tareas, ciclos), do: ciclos
+
+  defp buscar_ciclos_tareas([tarea | resto], tareas, ciclos) do
+    nuevos = buscar_ciclos(tarea.id, tareas, [])
+    buscar_ciclos_tareas(resto, tareas, ciclos ++ nuevos)
+  end
+
+  defp buscar_ciclos(id, tareas, camino) do
+    if id in camino do
+      [extraer_ciclo(id, camino)]
+    else
+      case buscar_tarea(id, tareas) do
+        nil -> []
+        tarea ->
+          buscar_en_deps(tarea.dependencias, tareas, camino ++ [id], [])
+      end
+    end
+  end
+
+  defp buscar_tarea(_id, []), do: nil
+
+  defp buscar_tarea(id, [tarea | resto]) do
+    if tarea.id == id, do: tarea, else: buscar_tarea(id, resto)
+  end
+
+  defp buscar_en_deps([], _tareas, _camino, ciclos), do: ciclos
+
+  defp buscar_en_deps([dep | resto], tareas, camino, ciclos) do
+    nuevos = buscar_ciclos(dep, tareas, camino)
+    buscar_en_deps(resto, tareas, camino, ciclos ++ nuevos)
+  end
+
+  defp extraer_ciclo(id, [id | resto]), do: [id | resto]
+  defp extraer_ciclo(id, [_ | resto]), do: extraer_ciclo(id, resto)
+
+  defp normalizar_ciclo(ciclo) do
+    menor = Enum.min(ciclo)
+    pos = Enum.find_index(ciclo, &(&1 == menor))
+    Enum.drop(ciclo, pos) ++ Enum.take(ciclo, pos)
+  end
+
+  # PROGRAMA PRINCIPAL
 
   def main do
+    Util2.mostrar("=== PLANIFICACION DE TAREAS ===", :mensaje)
+
     case leer_tareas("tareas.csv") do
-      {:error, motivo} ->
-        Util2.mostrar("AVISO: #{motivo}", :error)
-
-      {:ok, _tareas, errores} when errores != [] ->
-        errores
-        |> Util2.convertir_coleccion_mensaje(fn {i, motivo} -> "  ERROR linea #{i}: #{motivo}\n" end)
-        |> Util2.mostrar(:error)
-
-        Util2.mostrar("No se buscan planes: hay errores en la entrada", :mensaje)
+      {:error, error} ->
+        Util2.mostrar(error, :error)
 
       {:ok, [], []} ->
-        Util2.mostrar("Proyecto vacio: no hay tareas", :mensaje)
+        Util2.mostrar("El proyecto esta vacio", :mensaje)
 
-      {:ok, lista, []} ->
-        tareas = Enum.map(lista, fn {tarea, _linea} -> tarea end)
-        mostrar_planes(tareas)
+      {:ok, tareas, errores} ->
+        errores_validacion =
+          validar_tareas(tareas)
+
+        if errores != [] or errores_validacion != [] do
+          Util2.mostrar("Hay errores. No se buscaran planes.", :error)
+          Enum.each(errores, &Util2.mostrar(&1, :error))
+          Enum.each(errores_validacion, &Util2.mostrar(&1, :error))
+        else
+          Util2.mostrar("Validacion correcta", :mensaje)
+          mostrar_planes(tareas)
+        end
     end
   end
 
+  # GUARDAR RESULTADOS
+
   defp mostrar_planes(tareas) do
-    total =
-      Enum.reduce(planes(tareas), 0, fn plan, cont ->
-        Util2.mostrar("  #{cont + 1}. #{plan}", :mensaje)
-        cont + 1
+    duracion_total = Enum.sum(Enum.map(tareas, & &1.duracion))
+    archivo = File.open!("planes.csv", [:write])
+    IO.write(archivo, "id;orden;duracion_total;penalizacion\n")
+
+    resultado =
+      Enum.reduce(planes(tareas), {0, nil, []}, fn plan, {total, minima, mejores} ->
+        numero = total + 1
+        orden = Enum.join(plan.orden, "!")
+
+        IO.write(archivo, "#{numero};#{orden};#{duracion_total};#{plan.penalizacion}\n")
+
+        cond do
+          minima == nil ->
+            {numero, plan.penalizacion, [plan]}
+
+          plan.penalizacion < minima ->
+            {numero, plan.penalizacion, [plan]}
+
+          plan.penalizacion == minima ->
+            {numero, minima, mejores ++ [plan]}
+
+          true ->
+            {numero, minima, mejores}
+        end
       end)
 
-    duracion_total = tareas |> Enum.map(fn t -> t.duracion end) |> Enum.sum()
+    File.close(archivo)
+
+    {total, minima, mejores} = resultado
+
+    escribir_resumen(total, minima, mejores, duracion_total)
+    escribir_mejor_svg(tareas, mejores, duracion_total)
 
     Util2.mostrar("Total de planes: #{total}", :mensaje)
-    Util2.mostrar("Tiempo total del proyecto: #{duracion_total}", :mensaje)
+    Util2.mostrar("Tiempo total: #{duracion_total}", :mensaje)
+    Util2.mostrar("Penalizacion minima: #{minima}", :mensaje)
+    Util2.mostrar("Archivos creados correctamente", :mensaje)
+  end
+
+  defp escribir_resumen(total, minima, mejores, duracion_total) do
+    texto =
+      if total == 0 do
+        "Resumen\nNo existen planes validos.\n"
+      else
+        lista =
+          Enum.map(mejores, fn plan ->
+            "#{Enum.join(plan.orden, " - ")} (penalizacion #{plan.penalizacion})"
+          end)
+
+        """
+        Resumen
+
+        Total de planes: #{total}
+        Tiempo total del proyecto: #{duracion_total}
+        Penalizacion minima: #{minima}
+
+        Planes con penalizacion minima:
+        #{Enum.join(lista, "\n")}
+        """
+      end
+
+    File.write!("resumen_tareas.txt", texto)
+  end
+
+  # DIAGRAMA SVG
+
+  defp escribir_mejor_svg(_tareas, [], _duracion_total) do
+    File.write!("mejor_plan.svg", """
+    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="120">
+      <text x="10" y="25" font-size="18">No hay planes disponibles</text>
+    </svg>
+    """)
+  end
+
+  defp escribir_mejor_svg(tareas, mejores, duracion_total) do
+    mejor = hd(mejores)
+    archivo = File.open!("mejor_plan.svg", [:write])
+
+    escala = 50
+    margen = 140
+    ancho = margen + duracion_total * escala + 50
+    alto = 100 + length(mejor.orden) * 45
+
+    IO.write(archivo, """
+    <svg xmlns="http://www.w3.org/2000/svg"
+         width="#{ancho}" height="#{alto}"
+         viewBox="0 0 #{ancho} #{alto}">
+    <rect width="100%" height="100%" fill="white"/>
+    <text x="20" y="30" font-size="20">Diagrama de Gantt - Mejor plan</text>
+    <line x1="#{margen}" y1="55" x2="#{ancho - 20}" y2="55" stroke="black"/>
+    """)
+
+    Enum.each(0..duracion_total, fn tiempo ->
+      x = margen + tiempo * escala
+
+      IO.write(archivo, """
+      <line x1="#{x}" y1="50" x2="#{x}" y2="60" stroke="black"/>
+      <text x="#{x}" y="45" font-size="12" text-anchor="middle">#{tiempo}</text>
+      """)
+    end)
+
+    Enum.each(Enum.with_index(mejor.orden), fn {id, indice} ->
+      tarea = Enum.find(tareas, &(&1.id == id))
+      {_, fin} = List.keyfind(mejor.finalizaciones, id, 0)
+
+      inicio = fin - tarea.duracion
+      x = margen + inicio * escala
+      y = 75 + indice * 45
+      ancho_barra = tarea.duracion * escala
+      color = if fin > tarea.plazo, do: "red", else: "green"
+
+      IO.write(archivo, """
+      <text x="10" y="#{y + 18}" font-size="14">#{escapar_xml(id)}</text>
+      <rect x="#{x}" y="#{y}" width="#{ancho_barra}" height="25"
+            fill="#{color}" stroke="black"/>
+      <text x="#{x + ancho_barra / 2}" y="#{y + 17}"
+            font-size="12" text-anchor="middle" fill="white">
+        #{inicio} - #{fin}
+      </text>
+      """)
+    end)
+
+    IO.write(archivo, """
+    <text x="20" y="#{alto - 10}" font-size="12">
+      Verde: cumple el plazo | Rojo: se pasa del plazo
+    </text>
+    </svg>
+    """)
+
+    File.close(archivo)
+  end
+
+  defp escapar_xml(texto) do
+    texto
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
   end
 end
 
