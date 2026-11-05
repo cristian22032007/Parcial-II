@@ -4,8 +4,6 @@ Code.require_file("../Util2.ex", __DIR__)
 
 defmodule Tareas do
 
-  # LECTURA Y VALIDACION DE DATOS
-
   def leer_tareas(ruta) do
     if File.exists?(ruta) do
       {tareas, errores} =
@@ -83,7 +81,7 @@ defmodule Tareas do
     end
   end
 
-  # BUSQUEDA DE PLANES
+  # Buscar planes
 
   def planes(tareas), do: buscar(tareas, [], [], [], 0, 0)
 
@@ -119,7 +117,7 @@ defmodule Tareas do
     if dep in terminadas, do: cumplidas?(resto, terminadas), else: false
   end
 
-  # VALIDACIONES GENERALES
+  # Validaciones generales
 
   defp validar_tareas(tareas) do
     ids = Enum.map(tareas, & &1.id)
@@ -151,7 +149,7 @@ defmodule Tareas do
     end)
   end
 
-  # DETECCION DE CICLOS
+  # Detectar ciclos
 
   defp validar_ciclos(tareas) do
     tareas
@@ -204,10 +202,10 @@ defmodule Tareas do
     Enum.drop(ciclo, pos) ++ Enum.take(ciclo, pos)
   end
 
-  # PROGRAMA PRINCIPAL
+  # PROGRAMA PRINCIPAL MAIN
 
   def main do
-    Util2.mostrar("=== PLANIFICACION DE TAREAS ===", :mensaje)
+    Util2.mostrar(" PLANIFICACION DE TAREAS ", :mensaje)
 
     case leer_tareas("tareas.csv") do
       {:error, error} ->
@@ -298,7 +296,7 @@ defmodule Tareas do
     File.write!("resumen_tareas.txt", texto)
   end
 
-  # DIAGRAMA SVG
+  # svg
 
   defp escribir_mejor_svg(_tareas, [], _duracion_total) do
     File.write!("mejor_plan.svg", """

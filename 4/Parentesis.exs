@@ -237,16 +237,16 @@ defmodule Parentesis do
 
 
   def main do
-    Util2.mostrar("=== 1. parametros.csv ===", :mensaje)
+    Util2.mostrar(" 1. parametros.csv ", :mensaje)
     procesar_parametros("parametros.csv")
 
-    Util2.mostrar("\n=== 2. primera n=18, p=18 ===", :mensaje)
+    Util2.mostrar("\n 2. primera n=18, p=18 ", :mensaje)
     primera_n18()
 
-    Util2.mostrar("\n=== 3. Stream infinito ===", :mensaje)
+    Util2.mostrar("\n 3. Stream infinito ", :mensaje)
     secuencia_infinita()
 
-    Util2.mostrar("\n=== 4. Verificacion de propuestas ===", :mensaje)
+    Util2.mostrar("\n 4. Verificacion de propuestas ", :mensaje)
     verificar_propuestas("propuestas.txt")
   end
 end
